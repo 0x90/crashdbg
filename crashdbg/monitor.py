@@ -185,7 +185,7 @@ class CrashMonitor(object):
 
     def parse_options(self):
         """
-            Parse options
+        Parse options
         """
         # Warn or fail about inconsistent use of DBM databases
         if self.options.database and self.options.database.startswith('dbm://'):

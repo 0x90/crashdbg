@@ -61,9 +61,8 @@ def open_database(filename):
     Parse the configuration file to get the database URI.
     """
     print("Opening configuration file: %s" % filename)
-    cl = CrashMonitor()
-    options = cl.read_config_file(filename)
-
+    cl = CrashMonitor(filename)
+    options = cl.parse_config()
     # Open the database.
     try:
         if not options.database:

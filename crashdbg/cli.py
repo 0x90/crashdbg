@@ -10,9 +10,11 @@ from crashdbg import run_crash_monitor, print_report_for_database, filter_duplic
 def cli():
     """
     CrashDBG - Application crash monitor and report generator
+
+    Mario Vilas  (mvilas@gmail.com)
+    0x90 (root@0x90.ru)
     """
-    print("Crash logger report")
-    print("by Mario Vilas (mvilas at gmail.com)")
+    pass
 
 
 @cli.command()
@@ -44,8 +46,7 @@ def install(config):
     """
     # Not yet compatible with Cygwin.
     if sys.platform == "cygwin":
-        raise NotImplementedError(
-            "This feature is not available on Cygwin")
+        raise NotImplementedError("This feature is not available on Cygwin")
 
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
         print('running in a PyInstaller bundle')
