@@ -157,6 +157,7 @@ class CrashDbgService(SMWinservice):
 
 
 def main():
+    # subprocess.check_output('python PythonService.py --startup auto install'.split())
     CrashDbgService.parse_command_line()
 
 

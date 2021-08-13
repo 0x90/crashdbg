@@ -1,8 +1,10 @@
-import logging
 import sys
+import logging
 from datetime import datetime
 from time import time
+
 import coloredlogs
+
 
 LOG_FORMAT = '%(asctime)s-[%(name)-7s]- %(levelname)-7s %(message)s'
 LOG_FIELD_STYLES = {'asctime': {},

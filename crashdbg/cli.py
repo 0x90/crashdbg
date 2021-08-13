@@ -1,9 +1,13 @@
 import os
 import sys
 
+import better_exceptions
 import click
 from winappdbg import System
-from crashdbg import run_crash_monitor, print_report_for_database, filter_duplicates, filter_inexistent_files, open_database
+
+from crashdbg import run_crash_monitor, print_report_for_database, open_database, Options
+
+better_exceptions.patch_logging()
 
 
 @click.group(context_settings=dict(help_option_names=['-h', '--help']))
@@ -36,6 +40,14 @@ def symfix():
     Fix debug symbols PATH
     """
     System.fix_symbol_store_path()
+
+
+@cli.command()
+def configure():
+    """
+    Configure CrashDBG with the help of wizard.
+    """
+    pass
 
 
 @cli.command()
@@ -85,15 +97,15 @@ def run(config):
 
 @cli.command()
 @click.option("-v", "--verbose", help="produces a full report")
-@click.option("-q", "--quiet", help="produces a brief report")
-@click.argument('config')
-def report(verbose, quiet):
+# @click.option("-q", "--quiet", help="produces a brief report")
+@click.argument('config', nargs=-1, type=click.Path(exists=True))
+def report(verbose, config):
     """
     Generate crash report from crash DB
     """
-    parameters = filter_duplicates(parameters)
-    parameters = filter_inexistent_files(parameters)
-    for filename in parameters:
+    options = Options()
+    options.verbose = verbose
+    for filename in config:
         cc = open_database(filename)
         print_report_for_database(cc, options)
 
