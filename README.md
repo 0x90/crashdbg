@@ -1,2 +1,5 @@
-# crashdbg
-Application crash logger + report generator. WinAppDbg based.
+# CrashDBG
+
+Application crash logger + report generator. 
+
+Based on WinAppDbg crash logger by Mario Vilas (mvilas at gmail.com)
