@@ -30,38 +30,10 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 import os
-import sys
 import time
-import optparse
 
 from winappdbg import CrashContainer, CrashDictionary
-
-from logger import CrashLogger
-
-try:
-    import cerealizer
-
-    cerealizer.freeze_configuration()
-except ImportError:
-    pass
-
-
-def parse_cmdline(argv):
-    'Parse the command line options.'
-    if len(argv) == 1:
-        argv = argv + ['--help']
-    usage = (
-        "\n    %prog <configuration file> [more configuration files...]\n"
-        "\n"
-        "Produces a full report of each crash found by crash_logger.py"
-    )
-    parser = optparse.OptionParser(usage=usage)
-    parser.add_option("-v", "--verbose", action="store_true", dest="verbose",
-                      help="produces a full report")
-    parser.add_option("-q", "--quiet", action="store_false", dest="verbose",
-                      help="produces a brief report")
-    (options, argv) = parser.parse_args(argv)
-    return (options, argv[1:])
+from .monitor import CrashMonitor
 
 
 def filter_duplicates(old_list):
@@ -85,11 +57,11 @@ def filter_inexistent_files(old_list):
 
 
 def open_database(filename):
-    cc = None
-
-    # Parse the configuration file to get the database URI.
+    """
+    Parse the configuration file to get the database URI.
+    """
     print("Opening configuration file: %s" % filename)
-    cl = CrashLogger()
+    cl = CrashMonitor()
     options = cl.read_config_file(filename)
 
     # Open the database.
@@ -139,29 +111,7 @@ def print_crash_report(cc, options):
             report = c.briefReport() + '\n'
         if isinstance(report, unicode):
             report = report.encode('UTF8')  # XXX HORRIBLE HACK!
-        print(report, end=' ')
+        print(report)
         print('-' * 79)
 
 
-def main(argv):
-    print("Crash logger report")
-    print("by Mario Vilas (mvilas at gmail.com)")
-    print()
-    (options, parameters) = parse_cmdline(argv)
-
-    parameters = filter_duplicates(parameters)
-    parameters = filter_inexistent_files(parameters)
-
-    for filename in parameters:
-        cc = open_database(filename)
-        print_report_for_database(cc, options)
-
-
-if __name__ == '__main__':
-    try:
-        import psyco
-
-        psyco.bind(main)
-    except ImportError:
-        pass
-    main(sys.argv)
