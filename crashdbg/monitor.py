@@ -30,24 +30,19 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 from __future__ import with_statement
-
 import ntpath
-import re
 import time
 
-from winappdbg import System, win32, \
-    HexInput, Process, Debug
-
-# Crashdbg libs
-from .handler import CrashEventHandler
-from .options import Options
+from winappdbg import System, win32, HexInput, Process, Debug
 
 try:
     WindowsError
 except NameError:
     from winappdbg.win32 import WindowsError, SLE_ERROR, SLE_MINORERROR, SLE_WARNING
 
-
+# Crashdbg libs
+from .handler import CrashEventHandler
+from .options import Options
 
 
 # XXX TODO
@@ -71,137 +66,37 @@ except NameError:
 
 class CrashMonitor(object):
 
-    def read_config_file(self, config):
+    def __init__(self, config):
+        self.config = config
+        self.options = Options()
+        self.eventHandler = None
+        self.logger = None
+        self.debug = None
+
+    def parse_config(self):
+        self.options.read_config_file(self.config)
+        self.parse_targets()
+        self.parse_options()
+
+        # Create the event handler
+        self.eventHandler = CrashEventHandler(self.options, self.config)
+        self.logger = self.eventHandler.logger
+
+        # Create the debug object
+        self.debug = Debug(self.eventHandler, bHostileCode=self.options.hostile)
+
+    def parse_targets(self):
         """
-        Read the configuration file
+        Parse debug targets
         """
-        # Initial options object with default values
-        options = Options()
-
-        # Keep track of duplicated options
-        opt_history = set()
-
-        # Regular expression to split the command and the arguments
-        regexp = re.compile(r'(\S+)\s+(.*)')
-
-        # Open the config file
-        with open(config, 'rU') as fd:
-            number = 0
-            while 1:
-
-                # Read a line
-                line = fd.readline()
-                if not line:
-                    break
-                number += 1
-
-                # Strip the extra whitespace
-                line = line.strip()
-
-                # If it's a comment line or a blank line, discard it
-                if not line or line.startswith('#'):
-                    continue
-
-                # Split the option and its arguments
-                match = regexp.match(line)
-                if not match:
-                    msg = "cannot parse line %d of config file %s"
-                    msg = msg % (number, config)
-                    raise RuntimeError(msg)
-                key, value = match.groups()
-
-                # Targets
-                if key == 'attach':
-                    if value:
-                        options.attach.append(value)
-                elif key == 'console':
-                    if value:
-                        options.console.append(value)
-                elif key == 'windowed':
-                    if value:
-                        options.windowed.append(value)
-                elif key == 'service':
-                    if value:
-                        options.service.append(value)
-
-                # List options
-                elif key == 'break_at':
-                    options.break_at.extend(self._parse_list(value))
-                elif key == 'stalk_at':
-                    options.stalk_at.extend(self._parse_list(value))
-                elif key == 'action':
-                    options.action.append(value)
-
-                # Switch options
-                else:
-
-                    # Warn about duplicated options
-                    if key in opt_history:
-                        print("Warning: duplicated option %s in line %d"
-                              " of config file %s" % (key, number, config))
-                        print()
-                    else:
-                        opt_history.add(key)
-
-                    # Output options
-                    if key == 'verbose':
-                        options.verbose = self._parse_boolean(value)
-                    elif key == 'logfile':
-                        options.logfile = value
-                    elif key == 'database':
-                        options.database = value
-                    elif key == 'duplicates':
-                        options.duplicates = self._parse_boolean(value)
-                    elif key == 'firstchance':
-                        options.firstchance = self._parse_boolean(value)
-                    elif key == 'memory':
-                        options.memory = int(value)
-                    elif key == 'ignore_python_errors':
-                        options.ignore_errors = self._parse_boolean(value)
-
-                    # Debugging options
-                    elif key == 'hostile':
-                        options.hostile = self._parse_boolean(value)
-                    elif key == 'follow':
-                        options.follow = self._parse_boolean(value)
-                    elif key == 'autodetach':
-                        options.autodetach = self._parse_boolean(value)
-                    elif key == 'restart':
-                        options.restart = self._parse_boolean(value)
-
-                    # Tracing options
-                    elif key == 'pause':
-                        options.pause = self._parse_boolean(value)
-                    elif key == 'interactive':
-                        options.interactive = self._parse_boolean(value)
-                    elif key == 'time_limit':
-                        options.time_limit = int(value)
-                    elif key == 'echo':
-                        options.echo = self._parse_boolean(value)
-                    elif key == 'action_events':
-                        options.action_events = self._parse_list(value)
-                    elif key == 'crash_events':
-                        options.crash_events = self._parse_list(value)
-
-                    # Unknown option
-                    else:
-                        msg = ("unknown option %s in line %d"
-                               " of config file %s") % (key, number, config)
-                        raise RuntimeError(msg)
-
-        # Return the options object
-        return options
-
-    def parse_targets(self, options):
         # Get the list of attach targets
         system = System()
         system.request_debug_privileges()
         system.scan_processes()
         attach_targets = list()
-        for token in options.attach:
+        for token in self.options.attach:
             if not token:
                 continue
-
 
             try:
                 dwProcessId = HexInput.integer(str(token))
@@ -230,11 +125,11 @@ class CrashMonitor(object):
                     except WindowsError as e:
                         raise ValueError("can't open process %d: %s" % (dwProcessId, e))
                     attach_targets.append(dwProcessId)
-        options.attach = attach_targets
+        self.options.attach = attach_targets
 
         # Get the list of console programs to execute
         console_targets = list()
-        for token in options.console:
+        for token in self.options.console:
             if not token:
                 continue
             vector = System.cmdline_to_argv(token)
@@ -247,11 +142,11 @@ class CrashMonitor(object):
                 vector[0] = filename
             token = System.argv_to_cmdline(vector)
             console_targets.append(token)
-        options.console = console_targets
+        self.options.console = console_targets
 
         # Get the list of windowed programs to execute
         windowed_targets = list()
-        for token in options.windowed:
+        for token in self.options.windowed:
             if not token:
                 continue
             vector = System.cmdline_to_argv(token)
@@ -264,11 +159,11 @@ class CrashMonitor(object):
                 vector[0] = filename
             token = System.argv_to_cmdline(vector)
             windowed_targets.append(token)
-        options.windowed = windowed_targets
+        self.options.windowed = windowed_targets
 
         # Get the list of services to attach to
         service_targets = list()
-        for token in options.service:
+        for token in self.options.service:
             if not token:
                 continue
             try:
@@ -282,21 +177,24 @@ class CrashMonitor(object):
             if not hasattr(status, 'ProcessId'):
                 raise ValueError("service targets not supported by the current platform")
             service_targets.append(token.lower())
-        options.service = service_targets
+        self.options.service = service_targets
 
         # If no targets were set at all, show an error message
-        if not options.attach and not options.console and not options.windowed and not options.service:
+        if not self.options.attach and not self.options.console and not self.options.windowed and not self.options.service:
             raise ValueError("no targets found!")
 
-    def parse_options(self, options):
+    def parse_options(self):
+        """
+            Parse options
+        """
         # Warn or fail about inconsistent use of DBM databases
-        if options.database and options.database.startswith('dbm://'):
-            if options.memory and options.memory > 1:
+        if self.options.database and self.options.database.startswith('dbm://'):
+            if self.options.memory and self.options.memory > 1:
                 print("Warning: using options 'dbm' and 'memory' in combination can have a severe")
                 print("  performance penalty.")
                 print()
-            if options.duplicates:
-                if options.verbose:
+            if self.options.duplicates:
+                if self.options.verbose:
                     print("Warning: inconsistent use of 'duplicates'")
                     print("  DBM databases do not allow duplicate entries with the same key.")
                     print("  This means that when the same crash is found more than once it will be logged")
@@ -308,9 +206,9 @@ class CrashMonitor(object):
                     raise ValueError(msg)
 
         # Warn about inconsistent use of time_limit
-        if options.time_limit and options.autodetach \
-                and (options.windowed or options.console):
-            count = len(options.windowed) + len(options.console)
+        if self.options.time_limit and self.options.autodetach \
+                and (self.options.windowed or self.options.console):
+            count = len(self.options.windowed) + len(self.options.console)
             print()
             print("Warning: inconsistent use of 'time_limit'")
             if count == 1:
@@ -321,96 +219,69 @@ class CrashMonitor(object):
             print("  Alternatively use 'attach' instead of launching new processes.")
             print()
         # Warn about inconsistent use of pause and interactive
-        if options.pause and options.interactive:
+        if self.options.pause and self.options.interactive:
             print("Warning: the 'pause' option is ignored when 'interactive' is set.")
             print()
 
-    def _parse_list(self, value):
-        tokens = set([token.strip() for token in value.lower().split(',')])
-        return tokens
-
-    def _parse_boolean(self, value):
-        value = value.strip().lower()
-        if value == 'true' or value == 'yes' or value == 'y':
-            return True
-        if value == 'false' or value == 'no' or value == 'n':
-            return False
-        return bool(int(value))
-
-    def run(self, config, options):
+    def run(self):
         """
         Run the crash logger
         """
-
-        # Create the event handler
-        eventHandler = CrashEventHandler(options, config)
-        logger = eventHandler.logger
-
         # Log the time we begin this run
-        if options.verbose:
-            logger.log_text("Crash logger started, %s" % time.ctime())
-            logger.log_text("Configuration: %s" % config)
+        self.logger.log_text("Crash logger started, %s" % time.ctime())
+        self.logger.log_text("Configuration: %s" % self.config)
 
-        # Run
+        # Run the crash logger using this debug object
         try:
-            # Create the debug object
-            with Debug(eventHandler, bHostileCode=options.hostile) as debug:
-
-                # Run the crash logger using this debug object
-                try:
-                    self._start_or_attach(debug, options, eventHandler)
-                    try:
-                        self._debugging_loop(debug, options, eventHandler)
-                    except Exception:
-                        if not options.verbose:
-                            raise
-                        return
-
-                # Kill all debugees on exit if requested
-                finally:
-                    if not options.autodetach:
-                        debug.kill_all(bIgnoreExceptions=True)
-
-        # Log the time we finish this run
+            self._start_or_attach()
+            self._debugging_loop()
+        except Exception:
+            pass
         finally:
-            if options.verbose:
-                logger.log_text("Crash logger stopped, %s" % time.ctime())
+            # Kill all debugees on exit if requested
+            if not self.options.autodetach:
+                self.debug.kill_all(bIgnoreExceptions=True)
 
-    def _start_or_attach(self, debug, options, eventHandler):
-        logger = eventHandler.logger
+            # Log the time we finish this run
+            if self.options.verbose:
+                self.logger.log_text("Crash logger stopped, %s" % time.ctime())
 
-        # Start or attach to the targets
+    def _start_or_attach(self):
+        """
+        Start or attach to the targets
+        """
         try:
-            for pid in options.attach:
-                debug.attach(pid)
-            for cmdline in options.console:
-                debug.execl(cmdline, bConsole=True,
-                            bFollow=options.follow)
-            for cmdline in options.windowed:
-                debug.execl(cmdline, bConsole=False,
-                            bFollow=options.follow)
-            for service in options.service:
+            for pid in self.options.attach:
+                self.debug.attach(pid)
+
+            for cmdline in self.options.console:
+                self.debug.execl(cmdline, bConsole=True, bFollow=self.options.follow)
+
+            for cmdline in self.options.windowed:
+                self.debug.execl(cmdline, bConsole=False, bFollow=self.options.follow)
+
+            for service in self.options.service:
                 status = System.get_service(service)
                 if not status.ProcessId:
-                    status = self._start_service(service, logger)
-                debug.attach(status.ProcessId)
+                    status = self._start_service(service)
+                self.debug.attach(status.ProcessId)
                 try:
-                    eventHandler.pidToServices[status.ProcessId].add(service)
+                    self.eventHandler.pidToServices[status.ProcessId].add(service)
                 except KeyError:
                     srvSet = set()
                     srvSet.add(service)
-                    eventHandler.pidToServices[status.ProcessId] = srvSet
+                    self.eventHandler.pidToServices[status.ProcessId] = srvSet
 
         # If the 'autodetach' was set to False,
         # make sure the debugees die if the debugger dies unexpectedly
         finally:
-            if not options.autodetach:
-                debug.system.set_kill_on_exit_mode(True)
+            if not self.options.autodetach:
+                self.debug.system.set_kill_on_exit_mode(True)
 
-    @staticmethod
-    def _start_service(service, logger):
-
-        # Start the service.
+    def _start_service(self, service, wait=True, timeout=20):
+        """
+        Start the service.
+        """
         status = System.get_service(service)
         try:
             name = System.get_service_display_name(service)
@@ -421,92 +292,95 @@ class CrashMonitor(object):
         System.start_service(service)
 
         # Wait for it to start.
-        timeout = 20
-        status = System.get_service(service)
-        while status.CurrentState == win32.SERVICE_START_PENDING:
-            timeout -= 1
-            if timeout <= 0:
-                logger.log_text("Error: timed out.")
-                msg = "Timed out waiting for service \"%s\" to start"
-                raise Exception(msg % name)
-            time.sleep(0.5)
+        if wait:
             status = System.get_service(service)
+            while status.CurrentState == win32.SERVICE_START_PENDING:
+                timeout -= 1
+                if timeout <= 0:
+                    self.logger.log_text("Error: timed out.")
+                    msg = "Timed out waiting for service \"%s\" to start"
+                    raise Exception(msg % name)
+                time.sleep(0.5)
+                status = System.get_service(service)
 
-        # Done.
-        logger.log_text("Service \"%s\" started successfully." % name)
+            # Done.
+            self.logger.log_text("Service \"%s\" started successfully." % name)
         return status
 
-    # Main debugging loop
-    def _debugging_loop(self, debug, options, eventHandler):
-
-        # Get the logger.
-        logger = eventHandler.logger
-
+    def _debugging_loop(self):
+        """
+        Main debugging loop
+        """
         # If there's a time limit, calculate how much is it.
-        timedOut = False
-        if options.time_limit:
-            maxTime = time.time() + options.time_limit
+        timed_out = False
+        if self.options.time_limit:
+            max_time = time.time() + self.options.time_limit
 
         # Loop until there are no more debuggees.
-        while debug.get_debugee_count() > 0:
-            maxTime = 0
+        while self.debug.get_debugee_count() > 0:
+            max_time = 0
             # Wait for debug events, with an optional timeout.
             while 1:
-                if options.time_limit:
-                    timedOut = time.time() > maxTime
-                    if timedOut:
+                if self.options.time_limit:
+                    timed_out = time.time() > max_time
+                    if timed_out:
                         break
                 try:
-                    debug.wait(100)
+                    self.debug.wait(100)
                     break
                 except WindowsError as e:
                     if e.winerror not in (win32.ERROR_SEM_TIMEOUT,
                                           win32.WAIT_TIMEOUT):
-                        logger.log_exc()
+                        self.logger.log_exc()
                         raise  # don't ignore this error
                 except Exception:
-                    logger.log_exc()
+                    self.logger.log_exc()
                     raise  # don't ignore this error
-            if timedOut:
-                logger.log_text("Execution time limit reached")
+            if timed_out:
+                self.logger.log_text("Execution time limit reached")
                 break
 
             # Dispatch the debug event and continue execution.
             try:
                 try:
-                    debug.dispatch()
+                    self.debug.dispatch()
                 finally:
-                    debug.cont()
+                    self.debug.cont()
             except Exception:
-                logger.log_exc()
-                if not options.ignore_errors:
+                self.logger.log_exc()
+                if not self.options.ignore_errors:
                     raise
 
             # Restart services marked for restart by the event handler.
             # Also attach to those services we want to debug.
             try:
-                while eventHandler.srvToRestart:
-                    service = eventHandler.srvToRestart.pop()
+                while self.eventHandler.srvToRestart:
+                    service = self.eventHandler.srvToRestart.pop()
                     try:
-                        descriptor = self._start_service(service, logger)
-                        if service in options.service:
+                        descriptor = self._start_service(service)
+                        if service in self.options.service:
                             try:
-                                debug.attach(descriptor.ProcessId)
+                                self.debug.attach(descriptor.ProcessId)
                                 try:
-                                    eventHandler.pidToServices[descriptor.ProcessId].add(service)
+                                    self.eventHandler.pidToServices[descriptor.ProcessId].add(service)
                                 except KeyError:
-                                    srvSet = set()
-                                    srvSet.add(service)
-                                    eventHandler.pidToServices[descriptor.ProcessId] = srvSet
+                                    self.eventHandler.pidToServices[descriptor.ProcessId] = {service}
+
                             except Exception:
-                                logger.log_exc()
-                                if not options.ignore_errors:
+                                self.logger.log_exc()
+                                if not self.options.ignore_errors:
                                     raise
                     except Exception:
-                        logger.log_exc()
-                        if not options.ignore_errors:
+                        self.logger.log_exc()
+                        if not self.options.ignore_errors:
                             raise
             except Exception:
-                logger.log_exc()
-                if not options.ignore_errors:
+                self.logger.log_exc()
+                if not self.options.ignore_errors:
                     raise
+
+
+def run_crash_monitor(config):
+    cl = CrashMonitor(config)
+    cl.parse_config()
+    cl.run()

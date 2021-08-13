@@ -1,4 +1,5 @@
-from winappdbg import EventHandler, Crash, Logger, DummyCrashContainer, CrashDictionary, CrashContainer, win32, System, \
+from winappdbg import EventHandler, Crash, Logger, DummyCrashContainer, \
+    CrashDictionary, CrashContainer, win32, System, \
     HexDump, Module
 from winappdbg.win32 import SLE_ERROR, SLE_MINORERROR, SLE_WARNING
 
@@ -24,13 +25,10 @@ class CrashEventHandler(EventHandler):
     crashCollector = Crash
 
     def __init__(self, options, currentConfig=None):
-
         # Copy the user-defined options.
         self.options = options
-
         # Copy the configuration used in this fuzzing session.
         self.currentConfig = currentConfig
-
         # Create the logger object.
         self.logger = Logger(options.logfile, options.verbose)
 
@@ -61,9 +59,10 @@ class CrashEventHandler(EventHandler):
         return CrashDictionary(url,
                                allowRepeatedKeys=self.options.duplicates)
 
-    # Add the crash to the database.
     def _add_crash(self, event, bFullReport=None, bLogEvent=True):
-
+        """
+        Add the crash to the database.
+        """
         # Unless forced either way, full reports are generated for exceptions.
         if bFullReport is None:
             bFullReport = event.get_event_code() == win32.EXCEPTION_DEBUG_EVENT
@@ -93,59 +92,61 @@ class CrashEventHandler(EventHandler):
         # The second element is True if the crash is new, False otherwise.
         return crash, bNew
 
-    # Determine if this is an event we must take action on.
     def _is_action_event(self, event):
-        return self.options.action and \
-               self._is_event_in_list(event, self.options.action_events)
+        """
+        Determine if this is an event we must take action on.
+        """
+        return self.options.action and self._is_event_in_list(event, self.options.action_events)
 
-    # Determine if this is a crash event.
     def _is_crash_event(self, event):
+        """
+        Determine if this is a crash event.
+        """
         return self._is_event_in_list(event, self.options.crash_events)
 
-    # Common implementation of _is_action_event() and _is_crash_event().
     def _is_event_in_list(self, event, event_list):
+        """
+        Common implementation of _is_action_event() and _is_crash_event().
+        """
         return \
-            ('event' in event_list) or \
-            ('exception' in event_list and \
-             (event.get_event_code() == win32.EXCEPTION_DEBUG_EVENT and \
-              (event.is_last_chance() or self.options.firstchance))) or \
+            ('event' in event_list) or ('exception' in event_list and
+                                        (event.get_event_code() == win32.EXCEPTION_DEBUG_EVENT and
+                                         (event.is_last_chance() or self.options.firstchance))) or \
             (event.eventMethod in event_list)
 
-    # Actions to take for events.
     def _action(self, event, crash=None):
-
+        """
+        Actions to take for events.
+        """
         # Pause if requested.
         if self.options.pause:
-            raw_input("Press enter to continue...")
+            input("Press enter to continue...")
 
         try:
-
             # Run the configured commands after finding a crash if requested.
             self._run_action_commands(event, crash)
-
         finally:
-
             # Enter interactive mode if requested.
             if self.options.interactive:
                 event.debug.interactive(bConfirmQuit=False)
 
-    # Most events are processed here. Others have specific quirks on when to
-    # consider them actionable or crashes.
-    def _default_event_processing(self, event, bFullReport=None,
-                                  bLogEvent=False):
+    def _default_event_processing(self, event, full_report=None, log_event=False):
+        """
+        Most events are processed here. Others have specific quirks on when to consider them actionable or crashes.
+        """
         crash = None
-        bNew = True
+        new_crash = True
         try:
             if self._is_crash_event(event):
-                crash, bNew = self._add_crash(event, bFullReport, bLogEvent)
+                crash, new_crash = self._add_crash(event, full_report, log_event)
         finally:
-            if bNew and self._is_action_event(event):
+            if new_crash and self._is_action_event(event):
                 self._action(event, crash)
 
-    # Run the configured commands after finding a crash.
-    # Wait until each command completes before executing the next.
-    # To avoid waiting, use the "start" command.
     def _run_action_commands(self, event, crash=None):
+        # Run the configured commands after finding a crash.
+        # Wait until each command completes before executing the next.
+        # To avoid waiting, use the "start" command.
         for action in self.options.action:
             if '%' in action:
                 if not crash:
@@ -156,32 +157,26 @@ class CrashEventHandler(EventHandler):
             process = system.start_process(action, bConsole=True)
             process.wait()
 
-    # Make the variable replacements in an action command line string.
     def _replace_action_variables(self, action, crash):
-
+        """
+        Make the variable replacements in an action command line string.
+        """
         # %COUNT% - Number of crashes currently stored in the database
         if '%COUNT%' in action:
             action = action.replace('%COUNT%', str(len(self.knownCrashes)))
 
         # %EXCEPTIONCODE% - Exception code in hexa
         if '%EXCEPTIONCODE%' in action:
-            if crash.exceptionCode:
-                exceptionCode = HexDump.address(crash.exceptionCode)
-            else:
-                exceptionCode = HexDump.address(0)
+            exceptionCode = HexDump.address(crash.exceptionCode) if crash.exceptionCode else HexDump.address(0)
             action = action.replace('%EXCEPTIONCODE%', exceptionCode)
 
         # %EVENTCODE% - Event code in hexa
         if '%EVENTCODE%' in action:
-            action = action.replace('%EVENTCODE%',
-                                    HexDump.address(crash.eventCode))
+            action = action.replace('%EVENTCODE%', HexDump.address(crash.eventCode))
 
         # %EXCEPTION% - Exception name, human readable
         if '%EXCEPTION%' in action:
-            if crash.exceptionName:
-                exceptionName = crash.exceptionName
-            else:
-                exceptionName = 'Not an exception'
+            exceptionName = crash.exceptionName if crash.exceptionName else 'Not an exception'
             action = action.replace('%EXCEPTION%', exceptionName)
 
         # %EVENT% - Event name, human readable
@@ -213,28 +208,28 @@ class CrashEventHandler(EventHandler):
 
         return action
 
-    # Get the location of the code that triggered the event.
     def _get_location(self, event, address):
+        """
+        Get the location of the code that triggered the event.
+        """
         label = event.get_process().get_label_at_address(address)
-        if label:
-            return label
-        return HexDump.address(address)
+        return label if label else HexDump.address(address)
 
-    # Log an exception as a single line of text.
     def _log_exception(self, event):
+        """
+        Log an exception as a single line of text.
+        """
         what = event.get_exception_description()
         address = event.get_exception_address()
         where = self._get_location(event, address)
-        if event.is_first_chance():
-            chance = 'first'
-        else:
-            chance = 'second'
+        chance = 'first' if event.is_first_chance() else 'second'
         msg = "%s (%s chance) at %s" % (what, chance, where)
         self.logger.log_event(event, msg)
 
-    # Set all breakpoints that can be set
-    # at each create process or load dll event.
     def _set_breakpoints(self, event):
+        """
+        Set all breakpoints that can be set at each create process or load dll event.
+        """
         method = event.debug.break_at
         bplist = self.options.break_at
         self._set_breakpoints_from_list(event, bplist, method)
@@ -242,8 +237,10 @@ class CrashEventHandler(EventHandler):
         bplist = self.options.stalk_at
         self._set_breakpoints_from_list(event, bplist, method)
 
-    # Set a list of breakppoints using the given method.
     def _set_breakpoints_from_list(self, event, bplist, method):
+        """
+        Set a list of breakppoints using the given method.
+        """
         dwProcessId = event.get_pid()
         aModule = event.get_module()
         for label in bplist:
@@ -269,53 +266,52 @@ class CrashEventHandler(EventHandler):
                     except WindowsError:
                         pass
 
-    # -- Events --------------------------------------------------------------------
-
-    # Handle all events not handled by the following methods.
     def event(self, event):
-        self._default_event_processing(event, bLogEvent=True)
+        """
+        Handle all events not handled by the following methods.
+        """
+        self._default_event_processing(event, log_event=True)
 
-    # Handle the create process events.
     def create_process(self, event):
+        """
+        Handle the create process events.
+        """
         try:
             try:
 
                 # Log the event.
                 if self.logger.is_enabled():
-                    lpStartAddress = event.get_start_address()
-                    szFilename = event.get_filename()
-                    if not szFilename:
-                        szFilename = Module.unknown
-                    if lpStartAddress:
-                        where = HexDump.address(lpStartAddress)
+                    start_address = event.get_start_address()
+                    filename = event.get_filename()
+                    if not filename:
+                        filename = Module.unknown
+                    if start_address:
+                        where = HexDump.address(start_address)
                         msg = "Process %s started, entry point at %s"
-                        msg = msg % (szFilename, where)
+                        msg = msg % (filename, where)
                     else:
-                        msg = "Attached to process %s" % szFilename
+                        msg = "Attached to process %s" % filename
                     self.logger.log_event(event, msg)
 
             finally:
-
                 # Process the event.
                 self._default_event_processing(event)
 
         finally:
-
             # Set user-defined breakpoints for this process.
             self._set_breakpoints(event)
 
-    # Handle the create thread events.
     def create_thread(self, event):
+        """
+        Handle the create thread events.
+        """
         try:
 
             # Log the event.
             if self.logger.is_enabled():
                 lpStartAddress = event.get_start_address()
-                if lpStartAddress:
-                    where = self._get_location(event, lpStartAddress)
-                    msg = "Thread started, entry point at %s" % where
-                else:
-                    msg = "Attached to thread"
+                msg = "Thread started, entry point at %s" % self._get_location(event,
+                                                                               lpStartAddress) if lpStartAddress else "Attached to thread"
                 self.logger.log_event(event, msg)
 
         finally:
@@ -323,34 +319,32 @@ class CrashEventHandler(EventHandler):
             # Process the event.
             self._default_event_processing(event)
 
-    # Handle the load dll events.
     def load_dll(self, event):
+        """
+        Handle the load dll events.
+        """
         try:
-            try:
-
-                # Log the event.
-                if self.logger.is_enabled():
-                    aModule = event.get_module()
-                    lpBaseOfDll = aModule.get_base()
-                    fileName = aModule.get_filename()
-                    if not fileName:
-                        fileName = "a new module"
-                    msg = "Loaded %s at %s"
-                    msg = msg % (fileName, HexDump.address(lpBaseOfDll))
-                    self.logger.log_event(event, msg)
-
-            finally:
-
-                # Process the event.
-                self._default_event_processing(event)
+            # Log the event.
+            if self.logger.is_enabled():
+                aModule = event.get_module()
+                lpBaseOfDll = aModule.get_base()
+                fileName = aModule.get_filename()
+                if not fileName:
+                    fileName = "a new module"
+                msg = "Loaded %s at %s"
+                msg = msg % (fileName, HexDump.address(lpBaseOfDll))
+                self.logger.log_event(event, msg)
 
         finally:
-
+            # Process the event.
+            self._default_event_processing(event)
             # Set user-defined breakpoints for this module.
             self._set_breakpoints(event)
 
-    # Handle the exit process events.
     def exit_process(self, event):
+        """
+        Handle the exit process events.
+        """
         try:
 
             # Log the event.
@@ -372,7 +366,6 @@ class CrashEventHandler(EventHandler):
                         del self.labelsCache[dwProcessId]
 
                 finally:
-
                     # Restart if requested.
                     if self.options.restart:
                         dwProcessId = event.get_pid()
@@ -402,29 +395,29 @@ class CrashEventHandler(EventHandler):
                             cmdline = aProcess.get_command_line()
                             event.debug.execl(cmdline)
 
-    # Handle the exit thread events.
     def exit_thread(self, event):
+        """
+        Handle the exit thread events.
+        """
         try:
-
             # Log the event.
             msg = "Thread terminated, exit code %x" % event.get_exit_code()
             self.logger.log_event(event, msg)
 
         finally:
-
             # Process the event.
-            self._default_event_processing(event, bLogEvent=False)
+            self._default_event_processing(event, log_event=False)
 
-    # Handle the unload dll events.
     def unload_dll(self, event):
-
+        """
+        Handle the unload dll events.
+        """
         # XXX FIXME
         # We should be updating the labels cache here,
         # otherwise we might lose the breakpoints if
         # the dll gets unloaded and then loaded again.
 
         try:
-
             # Log the event.
             if self.logger.is_enabled():
                 aModule = event.get_module()
@@ -432,32 +425,31 @@ class CrashEventHandler(EventHandler):
                 fileName = aModule.get_filename()
                 if not fileName:
                     fileName = 'a module'
-                msg = "Unloaded %s at %s"
-                msg = msg % (fileName, HexDump.address(lpBaseOfDll))
+
+                msg = "Unloaded %s at %s" % (fileName, HexDump.address(lpBaseOfDll))
                 self.logger.log_event(event, msg)
 
         finally:
-
             # Process the event.
             self._default_event_processing(event)
 
-    # Handle the debug output string events.
     def output_string(self, event):
+        """
+        Handle the debug output string events.
+        """
         try:
-
             # Echo the debug strings.
             if self.options.echo:
                 win32.OutputDebugString(event.get_debug_string())
-
         finally:
-
             # Process the event.
-            self._default_event_processing(event, bLogEvent=True)
+            self._default_event_processing(event, log_event=True)
 
-    # Handle the RIP events.
     def rip(self, event):
+        """
+        Handle the RIP events.
+        """
         try:
-
             # Log the event.
             if self.logger.is_enabled():
                 errorCode = event.get_rip_error()
@@ -475,15 +467,12 @@ class CrashEventHandler(EventHandler):
                 self.logger.log_event(event, msg % errorCode)
 
         finally:
-
             # Process the event.
             self._default_event_processing(event)
 
-    # -- Exceptions ----------------------------------------------------------------
-
-    # Kill the process if it's a second chance exception.
-    # Otherwise we'd get stuck in an infinite loop.
     def _post_exception(self, event):
+        # Kill the process if it's a second chance exception.
+        # Otherwise we'd get stuck in an infinite loop.
         if hasattr(event, 'is_last_chance') and event.is_last_chance():
             ##            try:
             ##                event.get_thread().set_pc(
@@ -492,8 +481,10 @@ class CrashEventHandler(EventHandler):
             ##            except Exception:
             event.get_process().kill()
 
-    # Handle all exceptions not handled by the following methods.
     def exception(self, event):
+        """
+        Handle all exceptions not handled by the following methods.
+        """
         try:
 
             # This is almost identical to the default processing.
@@ -510,15 +501,15 @@ class CrashEventHandler(EventHandler):
                     self._action(event, crash)
 
         finally:
-
             # Postprocessing of exceptions.
             self._post_exception(event.debug.lastEvent)
 
-    # Some exceptions are ignored by default.
-    # You can explicitly enable them again in the config file.
     def _exception_ignored_by_default(self, event, exc_name):
+        """
+        Some exceptions are ignored by default.
+        You can explicitly enable them again in the config file.
+        """
         try:
-
             # This is almost identical to the exception() method.
             # The difference is the logic to determine if it's a crash.
             crash = None
@@ -534,24 +525,24 @@ class CrashEventHandler(EventHandler):
                     self._action(event, crash)
 
         finally:
-
             # Postprocessing of exceptions.
             self._post_exception(event.debug.lastEvent)
 
-    # Unknown (most likely C++) exceptions are not crashes,
-    # unless explicitly overriden in the config file.
     def unknown_exception(self, event):
+        # Unknown (most likely C++) exceptions are not crashes,
+        # unless explicitly overriden in the config file.
         self._exception_ignored_by_default(event, 'unknown_exception')
 
-    # Microsoft Visual C exceptions are not crashes,
-    # unless explicitly overriden in the config file.
     def ms_vc_exception(self, event):
+        # Microsoft Visual C exceptions are not crashes,
+        # unless explicitly overriden in the config file.
         self._exception_ignored_by_default(event, 'ms_vc_exception')
 
-    # Breakpoint events.
     def breakpoint(self, event):
+        """
+        Breakpoint events handler
+        """
         try:
-
             # Determine if it's the first chance exception event.
             bFirstChance = event.is_first_chance()
 
@@ -581,18 +572,11 @@ class CrashEventHandler(EventHandler):
             # crashes unless explicitly stated, or overriden by the 'break_at'
             # option (in that case they become "our" breakpoints). Otherwise
             # use the same criteria as for all debug events.
-            crash = None
-            bNew = True
+            crash, bNew = None, True
             try:
-
                 # Determine if it's a crash event.
-                bIsCrash = False
                 if bOurs or bSystem:
-                    if bWow64:
-                        bIsCrash = 'wow64_breakpoint' in \
-                                   self.options.crash_events
-                    else:
-                        bIsCrash = 'breakpoint' in self.options.crash_events
+                    bIsCrash = 'wow64_breakpoint' in self.options.crash_events if bWow64 else 'breakpoint' in self.options.crash_events
                 else:
                     bIsCrash = self._is_crash_event(event)
 
@@ -604,17 +588,11 @@ class CrashEventHandler(EventHandler):
 
                 # Must the crash be treated as new?
                 if bNew:
-
                     # Determine if we must take action.
-                    bAction = False
                     if bOurs:
                         bAction = True
                     elif bSystem:
-                        if bWow64:
-                            bAction = 'wow64_breakpoint' in \
-                                      self.options.crash_events
-                        else:
-                            bAction = 'breakpoint' in self.options.crash_events
+                        bAction = 'wow64_breakpoint' in self.options.crash_events if bWow64 else 'breakpoint' in self.options.crash_events
                     else:
                         bAction = self._is_action_event(event)
 
@@ -623,11 +601,11 @@ class CrashEventHandler(EventHandler):
                         self._action(event, crash)
 
         finally:
-
             # Postprocessing of exceptions.
             self._post_exception(event.debug.lastEvent)
 
-    # WOW64 breakpoints handled by the same code as normal breakpoints.
     def wow64_breakpoint(self, event):
+        """
+        WOW64 breakpoints handled by the same code as normal breakpoints.
+        """
         self.breakpoint(event)
-
