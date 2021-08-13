@@ -7,6 +7,7 @@ setup(
     include_package_data=True,
     install_requires=[
         'Click',
+        'coloredlogs',
         'winappdbg @ git+https://github.com/MarioVilas/winappdbg#egg=winappdbg',
     ],
     entry_points={
