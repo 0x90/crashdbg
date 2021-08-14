@@ -36,24 +36,24 @@ from winappdbg import CrashContainer, CrashDictionary
 from .monitor import CrashMonitor
 
 
-def filter_duplicates(old_list):
-    new_list = list()
-    for filename in old_list:
-        if filename not in new_list:
-            new_list.append(filename)
-        else:
-            print("Skipping duplicate file: %s" % filename)
-    return new_list
-
-
-def filter_inexistent_files(old_list):
-    new_list = list()
-    for filename in old_list:
-        if os.path.exists(filename):
-            new_list.append(filename)
-        else:
-            print("Cannot find file: %s" % filename)
-    return new_list
+# def filter_duplicates(old_list):
+#     new_list = list()
+#     for filename in old_list:
+#         if filename not in new_list:
+#             new_list.append(filename)
+#         else:
+#             print("Skipping duplicate file: %s" % filename)
+#     return new_list
+#
+#
+# def filter_inexistent_files(old_list):
+#     new_list = list()
+#     for filename in old_list:
+#         if os.path.exists(filename):
+#             new_list.append(filename)
+#         else:
+#             print("Cannot find file: %s" % filename)
+#     return new_list
 
 
 def open_database(filename):
